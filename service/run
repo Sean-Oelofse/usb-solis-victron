@@ -1,0 +1,5 @@
+#!/bin/sh
+# daemontools run script for the Solis USB discovery supervisor.
+exec 2>&1
+DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+exec python3 "$DIR/solis_scan.py" --config "$DIR/conf/solis.conf"

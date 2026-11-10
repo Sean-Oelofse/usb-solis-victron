@@ -1,0 +1,4 @@
+#!/bin/sh
+# Rotate logs to /var/log/dbus-solis/current (view with: tail -F that file).
+exec 2>&1
+exec multilog t s25000 n4 /var/log/dbus-solis

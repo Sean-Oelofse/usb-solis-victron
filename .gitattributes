@@ -1,0 +1,9 @@
+# Venus OS runs these; force LF so they execute under busybox/ash on Linux
+# even when the repo is cloned or edited on Windows.
+*.sh        text eol=lf
+*.py        text eol=lf
+*.conf      text eol=lf
+service/run      text eol=lf
+service/log/run  text eol=lf
+install.sh  text eol=lf
+uninstall.sh text eol=lf
