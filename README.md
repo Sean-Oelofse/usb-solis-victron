@@ -41,7 +41,7 @@ Device List, and VRM as a PV Inverter — no extra configuration per unit.
 
 ```sh
 ssh root@<venus-ip>
-git clone https://github.com/<you>/solis-usb-victron /data/dbus-solis
+git clone https://github.com/Sean-Oelofse/solis-usb-victron /data/dbus-solis
 /data/dbus-solis/install.sh
 ```
 
