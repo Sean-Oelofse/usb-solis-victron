@@ -39,15 +39,26 @@ Device List, and VRM as a PV Inverter — no extra configuration per unit.
 
 ## Install (on the GX device)
 
+SSH into the GX as `root`, then run one line:
+
 ```sh
-ssh root@<venus-ip>
-git clone https://github.com/Sean-Oelofse/solis-usb-victron /data/dbus-solis
+bash <(curl -fsSL https://raw.githubusercontent.com/Sean-Oelofse/usb-solis-victron/main/install.sh)
+```
+
+That fetches the project into `/data/dbus-solis` (via git, or a tarball if git
+isn't present), fetches Victron's `velib_python`, installs `minimalmodbus`,
+links the service into `/service`, and adds a `/data/rc.local` boot hook so it
+re-links after firmware updates.
+
+Prefer to clone it yourself?
+
+```sh
+git clone https://github.com/Sean-Oelofse/usb-solis-victron /data/dbus-solis
 /data/dbus-solis/install.sh
 ```
 
-The installer clones Victron's `velib_python`, installs `minimalmodbus`, links
-the service into `/service`, and adds a `/data/rc.local` boot hook so it
-re-links after firmware updates.
+Re-running the one-liner later updates an existing install to the latest
+version before re-installing.
 
 Watch it work:
 
