@@ -211,9 +211,9 @@ class Supervisor:
                 io.serial.timeout = 0.6
                 io.clear_buffers_before_each_transaction = True
                 freq = io.read_register(
-                    3042, functioncode=4) * 0.01   # grid frequency
-                rated = io.read_register(
-                    3109, functioncode=4) * 10.0   # rated power W (nameplate)
+                    3042, functioncode=4) * 0.01   # grid frequency (doc 3043)
+                rated = io.read_long(
+                    3699, functioncode=4)          # rated power W, U32 (doc 3700-3701)
                 ok = (self.freq_range[0] <= freq <= self.freq_range[1] and
                       self.power_range[0] <= rated <= self.power_range[1])
                 if ok:

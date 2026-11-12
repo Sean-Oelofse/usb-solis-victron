@@ -54,19 +54,27 @@ import minimalmodbus  # pip3 install minimalmodbus  (pulls in pyserial)
 #   kind: 'u16'|'s16'|'u32'|'s32'  (u32/s32 = this reg + next, MSW first)
 # Phase mapping: 3033/3036 = AB line / A phase; 3034/3037 = BC / B; 3035/3038 = CA / C
 # ===========================================================================
+#   Addresses are WIRE addresses = (Solis doc register number - 1). Sections 5.3
+#   and 5.6 of the protocol state the 3xxx numbers are sent on the wire minus 1.
+#   Verified against Ginlong "RS485_MODBUS Communication Protocol" V001B000D032.
 REG = {
-    "ac_power":     {"addr": 3004, "kind": "s32", "scale": 1.0,  "unit": "W"},    # 3004-3005 S32
-    "energy_total": {"addr": 3008, "kind": "u32", "scale": 1.0,  "unit": "kWh"},  # 3008-3009 U32
-    "energy_today": {"addr": 3014, "kind": "u16", "scale": 0.1,  "unit": "kWh"},
-    "temperature":  {"addr": 3041, "kind": "s16", "scale": 0.1,  "unit": "degC"},
-    "frequency":    {"addr": 3042, "kind": "u16", "scale": 0.01, "unit": "Hz"},
-    "rated_power":  {"addr": 3109, "kind": "u16", "scale": 10.0, "unit": "W"},     # factory-rated
-    "v_l1":         {"addr": 3033, "kind": "u16", "scale": 0.1,  "unit": "V"},
-    "v_l2":         {"addr": 3034, "kind": "u16", "scale": 0.1,  "unit": "V"},
-    "v_l3":         {"addr": 3035, "kind": "u16", "scale": 0.1,  "unit": "V"},
-    "i_l1":         {"addr": 3036, "kind": "u16", "scale": 0.1,  "unit": "A"},
-    "i_l2":         {"addr": 3037, "kind": "u16", "scale": 0.1,  "unit": "A"},
-    "i_l3":         {"addr": 3038, "kind": "u16", "scale": 0.1,  "unit": "A"},
+    "ac_output_type": {"addr": 3002, "kind": "u16", "scale": 1.0,  "unit": ""},    # doc 3003: 0=1ph 1=3P4W 2=3P3W 3=either
+    "ac_power":       {"addr": 3004, "kind": "u32", "scale": 1.0,  "unit": "W"},    # doc 3005-3006 active power
+    "energy_total":   {"addr": 3008, "kind": "u32", "scale": 1.0,  "unit": "kWh"},  # doc 3009-3010
+    "energy_today":   {"addr": 3014, "kind": "u16", "scale": 0.1,  "unit": "kWh"},  # doc 3015
+    "rated_power":    {"addr": 3699, "kind": "u32", "scale": 1.0,  "unit": "W"},    # doc 3700-3701 nameplate
+    "temperature":    {"addr": 3041, "kind": "s16", "scale": 0.1,  "unit": "degC"}, # doc 3042
+    "frequency":      {"addr": 3042, "kind": "u16", "scale": 0.01, "unit": "Hz"},   # doc 3043
+    "inverter_status":{"addr": 3043, "kind": "u16", "scale": 1.0,  "unit": ""},     # doc 3044
+    # 3-phase A/B/C voltages (wire 3033-3035) and currents (wire 3036-3038).
+    # On a SINGLE-phase inverter the live AC values land in the C-phase slots:
+    # voltage 3035 / current 3038; the A and B slots read 0.
+    "v_l1":           {"addr": 3033, "kind": "u16", "scale": 0.1,  "unit": "V"},    # doc 3034 A
+    "v_l2":           {"addr": 3034, "kind": "u16", "scale": 0.1,  "unit": "V"},    # doc 3035 B
+    "v_l3":           {"addr": 3035, "kind": "u16", "scale": 0.1,  "unit": "V"},    # doc 3036 C / 1-phase
+    "i_l1":           {"addr": 3036, "kind": "u16", "scale": 0.1,  "unit": "A"},    # doc 3037 A
+    "i_l2":           {"addr": 3037, "kind": "u16", "scale": 0.1,  "unit": "A"},    # doc 3038 B
+    "i_l3":           {"addr": 3038, "kind": "u16", "scale": 0.1,  "unit": "A"},    # doc 3039 C / 1-phase
 }
 
 # ===========================================================================
@@ -90,14 +98,14 @@ POLL_MS      = 2000
 
 def resolve_rated(modbus, spec, fallback):
     """Turn a --rated value into a number of watts. 'auto' (or 0/blank) reads
-    the factory nameplate from register 3109; anything else is used verbatim."""
+    the factory nameplate from register 3699; anything else is used verbatim."""
     if str(spec).strip().lower() in ("auto", "", "0"):
         try:
             rated = modbus.read("rated_power")
             if rated and rated > 0:
-                logging.info("Auto-detected rated power = %.0f W (reg 3109)", rated)
+                logging.info("Auto-detected rated power = %.0f W (reg 3699)", rated)
                 return float(rated)
-            logging.warning("Nameplate reg 3109 read back %.0f W; using "
+            logging.warning("Nameplate reg 3699 read back %.0f W; using "
                             "fallback %d W", rated, fallback)
         except Exception as e:
             logging.warning("Could not auto-detect rated power (%s); using "
@@ -264,12 +272,17 @@ class SolisService:
             self.svc["/Ac/Power"] = round(power, 1)
             self.svc["/Ac/Energy/Forward"] = round(total, 2)
 
-            v = {"L1": self.modbus.read("v_l1")}
-            i = {"L1": self.modbus.read("i_l1")}
-            if "L2" in self.phases:
-                v["L2"], i["L2"] = self.modbus.read("v_l2"), self.modbus.read("i_l2")
-            if "L3" in self.phases:
-                v["L3"], i["L3"] = self.modbus.read("v_l3"), self.modbus.read("i_l3")
+            if len(self.phases) == 1:
+                # Single-phase: live AC is in the C-phase slots (3035/3038).
+                v = {"L1": self.modbus.read("v_l3")}
+                i = {"L1": self.modbus.read("i_l3")}
+            else:
+                v = {"L1": self.modbus.read("v_l1"),
+                     "L2": self.modbus.read("v_l2"),
+                     "L3": self.modbus.read("v_l3")}
+                i = {"L1": self.modbus.read("i_l1"),
+                     "L2": self.modbus.read("i_l2"),
+                     "L3": self.modbus.read("i_l3")}
 
             share = total / len(self.phases)
             for ph in self.phases:
@@ -298,7 +311,7 @@ class SolisService:
                      self.args.instance, self.args.position, self.args.serial)
         try:
             rated = self.modbus.read("rated_power")
-            logging.info("Factory-rated output power (reg 3109) = %.0f W; "
+            logging.info("Factory-rated output power (reg 3699) = %.0f W; "
                          "using --rated %d W", rated, self.args.rated)
             if abs(rated - self.args.rated) > 0.1 * self.args.rated:
                 logging.warning("--rated %d W differs >10%% from nameplate %.0f W; "
@@ -336,7 +349,7 @@ def main():
                     help="0=AC input, 1=AC output (default), 2=AC input 2")
     ap.add_argument("--rated", default="auto",
                     help="inverter rated AC power in W (for %%<->W conversion). "
-                         "'auto' (default) reads the nameplate from reg 3109.")
+                         "'auto' (default) reads the nameplate from reg 3699.")
     ap.add_argument("--rated-fallback", type=int, default=5000,
                     help="rated W to use if --rated auto cannot read the inverter")
     ap.add_argument("--max-percent", type=float, default=100.0,
