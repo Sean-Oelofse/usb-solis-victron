@@ -91,7 +91,8 @@ def load_config(path):
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
-                cfg[k.strip()] = v.strip()
+                v = v.split("#", 1)[0].strip()   # drop inline comments
+                cfg[k.strip()] = v
     return cfg
 
 
