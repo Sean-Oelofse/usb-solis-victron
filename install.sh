@@ -35,17 +35,20 @@ download() {   # download <url> <outfile>
     fi
 }
 
+untar_over() {   # untar_over <tarball> <dest>  (extract over an existing dir)
+    _tmp=$(mktemp -d)
+    download "$1" "$_tmp/src.tgz" || { rm -rf "$_tmp"; return 1; }
+    mkdir -p "$2"
+    tar -xzf "$_tmp/src.tgz" -C "$2" --strip-components=1
+    rm -rf "$_tmp"
+}
+
 fetch_into() {   # fetch_into <giturl> <tarball> <branch> <dest>
-    _git="$1"; _tar="$2"; _br="$3"; _dst="$4"
     if have git; then
-        git clone --depth 1 -b "$_br" "$_git" "$_dst"
+        git clone --depth 1 -b "$3" "$1" "$4"
     else
         echo "git not found; downloading tarball..."
-        _tmp=$(mktemp -d)
-        download "$_tar" "$_tmp/src.tgz"
-        mkdir -p "$_dst"
-        tar -xzf "$_tmp/src.tgz" -C "$_dst" --strip-components=1
-        rm -rf "$_tmp"
+        untar_over "$2" "$4"
     fi
 }
 
@@ -62,12 +65,21 @@ if [ -n "$SRCDIR" ]; then
     DIR="$SRCDIR"                       # installing in place from a clone
     echo "Installing from local checkout: $DIR"
 elif [ -f "$TARGET/solis_scan.py" ]; then
-    DIR="$TARGET"                       # already present; refresh if it's a git repo
-    echo "Found existing install at $DIR"
+    DIR="$TARGET"                       # already present; refresh to latest
+    echo "Found existing install at $DIR; updating to latest $BRANCH..."
+    # keep the user's live config safe across the update
+    [ -f "$DIR/conf/solis.conf" ] && cp "$DIR/conf/solis.conf" "$DIR/conf/.solis.conf.bak" 2>/dev/null || true
     if [ -d "$DIR/.git" ] && have git; then
-        echo "Updating to latest $BRANCH..."
-        git -C "$DIR" fetch --depth 1 origin "$BRANCH" || true
-        git -C "$DIR" reset --hard "origin/$BRANCH" || true
+        git -C "$DIR" fetch --depth 1 origin "$BRANCH" \
+            && git -C "$DIR" reset --hard "origin/$BRANCH" \
+            || echo "WARN: git update failed; keeping existing files"
+    else
+        untar_over "$TARBALL" "$DIR" || echo "WARN: refresh failed; keeping existing files"
+    fi
+    # the live config is untracked now, but a legacy git checkout may have had
+    # it tracked and just deleted it on reset -> restore it from the backup.
+    if [ ! -f "$DIR/conf/solis.conf" ] && [ -f "$DIR/conf/.solis.conf.bak" ]; then
+        cp "$DIR/conf/.solis.conf.bak" "$DIR/conf/solis.conf"
     fi
 else
     echo "Fetching $REPO_NAME into $TARGET ..."
@@ -77,6 +89,12 @@ else
 fi
 
 cd "$DIR"
+
+# --- ensure a live config exists (seed from sample; never overwrite edits) --
+if [ ! -f "$DIR/conf/solis.conf" ] && [ -f "$DIR/conf/solis.conf.sample" ]; then
+    cp "$DIR/conf/solis.conf.sample" "$DIR/conf/solis.conf"
+    echo "Created conf/solis.conf from sample"
+fi
 
 # --- 1. velib_python (vedbus) ----------------------------------------------
 if [ ! -f "$DIR/ext/velib_python/vedbus.py" ]; then

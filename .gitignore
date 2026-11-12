@@ -1,7 +1,9 @@
 # Cloned at install time
 ext/velib_python/
 
-# Runtime state
+# Runtime state / user config (seeded from conf/solis.conf.sample on install)
+conf/solis.conf
+conf/.solis.conf.bak
 conf/instances.json
 
 # Python
